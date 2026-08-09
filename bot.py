@@ -266,6 +266,15 @@ async def post_init(app: Application) -> None:
         BotCommand("start", "Introduce SaveNoms"),
         BotCommand("help", "How SaveNoms works"),
     ])
+    await app.bot.set_my_description(
+        "SaveNoms helps you cut food waste. After a meal, send a photo of your plate or "
+        "drinks and I'll estimate how much was left uneaten — in exact portions or counts, "
+        "not vague percentages — plus one specific tip to help you order the right amount "
+        "next time. No typing needed, just snap and send. 🍽️"
+    )
+    await app.bot.set_my_short_description(
+        "📸 Send a photo of your leftovers and I'll estimate the food waste + give you a portioning tip."
+    )
 
 
 def build_application() -> Application:
