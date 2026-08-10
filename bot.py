@@ -53,7 +53,7 @@ How to break the photo into items — this matters a lot, read carefully:
 - EXCEPTION: if a plate/bowl/tray holds individually countable, identical whole units (e.g. apples, dumplings, chicken wings, nuggets, cookies, eggs, prawns), treat that as its own item and count the actual number of whole units left uneaten (fractions allowed for a partly-eaten unit, e.g. 2.5 apples if one apple is half-eaten). Use exact counts here, not a portion fraction.
 - If there are multiple separate plates/trays (e.g. two people's meals, or a shared platter plus a separate rice bowl), give each its own single entry.
 - Every distinct drink (cup, glass, bottle, can, pitcher) is its OWN separate entry — never merge a drink into a food entry, and never skip a drink just because the photo is food-focused.
-- Do NOT include sauces, condiments, dips, or dressings as their own item (e.g. ketchup, chili sauce, mayo, soy sauce, salad dressing, gravy) — ignore them entirely, even if some is left on a plate.
+- NEVER include sauces, condiments, dips, or dressings as their own item — this is a hard rule, not a suggestion. Examples to always ignore entirely, even if some is left in a dish or on a plate: ketchup, chili sauce, soy sauce, mayo, gravy, salad dressing, any dipping sauce. Do not create an entry for them under any name, and do not add their leftover amount to any other item's total.
 - If the exact same item appears more than once (e.g. two identical drinks), combine into ONE entry and sum the wasted amount rather than listing duplicates.
 
 For each item, work through these steps IN ORDER:
@@ -89,13 +89,44 @@ Rules:
 - total_portions_wasted = sum of every item's portions_wasted, rounded to the nearest 0.25.
 - waste_level must be exactly one of: "minimal", "low", "moderate", "high", "severe" — judge holistically from total_portions_wasted (roughly: under 0.5 = minimal, ~0.5-1 = low, ~1-2 = moderate, ~2-3 = high, 3+ = severe).
 - tip must be a single, specific, actionable sentence about portioning, consistent with each item's notes/percent_remaining, referencing an item's "display" wasted amount where it makes the tip more concrete. Keep it under 30 words.
+- SPECIAL CASE — nothing wasted: if every item is essentially fully consumed (percent_remaining 0 for every item, or 0 units left for countable items), set total_portions_wasted to 0 and make tip a short, genuine congratulatory sentence praising them for zero food waste — do NOT suggest smaller portions or give any portioning advice in this case, e.g. "Great job, you finished everything on your plate — zero food waste!"
 - If no food or drink is visible in the image at all, return {"items": [], "total_portions_wasted": 0, "waste_level": "minimal", "tip": "I couldn't spot any food or drink in this photo — try sending a clearer picture."}
 
 Return ONLY the raw JSON object. No explanation, no markdown."""
 
 
+SAUCE_KEYWORDS = ("sauce", "ketchup", "mayo", "dip", "dressing", "gravy", "condiment")
+
+
 def _fmt_portions(n: float) -> str:
     return f"{n:g}"
+
+
+def is_sauce_or_condiment(name: str) -> bool:
+    """Backstop for the prompt's sauce-exclusion rule, since the model doesn't always follow it."""
+    name_lower = (name or "").lower()
+    return any(keyword in name_lower for keyword in SAUCE_KEYWORDS)
+
+
+def compute_waste_level(total: float) -> str:
+    if total < 0.5:
+        return "minimal"
+    if total < 1:
+        return "low"
+    if total < 2:
+        return "moderate"
+    if total < 3:
+        return "high"
+    return "severe"
+
+
+def strip_sauces_and_recompute(parsed: dict) -> dict:
+    items = [item for item in parsed.get("items", []) if not is_sauce_or_condiment(item.get("name", ""))]
+    total = round(sum(item.get("portions_wasted", 0) or 0 for item in items) * 4) / 4
+    parsed["items"] = items
+    parsed["total_portions_wasted"] = total
+    parsed["waste_level"] = compute_waste_level(total)
+    return parsed
 
 
 def merge_duplicate_items(items: list) -> list:
@@ -125,6 +156,16 @@ def build_report_message(parsed: dict) -> str:
     total_portions = parsed.get("total_portions_wasted", 0)
     level = parsed.get("waste_level", "minimal")
     tip = parsed.get("tip", "")
+
+    if items and total_portions <= 0:
+        lines = ["🎉 *Zero Food Waste!*", "━━━━━━━━━━━━━━━━━━━━━"]
+        for item in items:
+            lines.append(f"• {item.get('name', 'Item')} — fully finished ✅")
+        lines += ["━━━━━━━━━━━━━━━━━━━━━", "🌟 Total portions wasted: 0 — nothing wasted!"]
+        congrats = tip or "Great job, you finished everything — zero food waste!"
+        lines += ["", f"👏 {congrats}"]
+        return "\n".join(lines)
+
     emoji = WASTE_LEVEL_EMOJI.get(level, "🍽️")
 
     lines = ["🍽️ *Food Waste Report*", "━━━━━━━━━━━━━━━━━━━━━"]
@@ -217,6 +258,7 @@ async def handle_food_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             raw_json = json_match.group(0)
 
         parsed = json.loads(raw_json)
+        parsed = strip_sauces_and_recompute(parsed)
 
         await update.message.reply_text(
             build_report_message(parsed),
