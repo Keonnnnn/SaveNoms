@@ -84,17 +84,19 @@ Return a JSON object with this exact structure (include "notes", "unit_type", an
     {"name": "Iced Coffee", "notes": "capped, liquid level not visible", "unit_type": "drink", "percent_remaining": 100, "display": "1 cup", "portions_wasted": 1},
     {"name": "Claypot Bowl", "notes": "empty bowl, just sauce residue, no food left", "unit_type": "portion", "percent_remaining": 0, "display": "fully finished", "portions_wasted": 0}
   ],
-  "total_portions_wasted": 3.25,
-  "waste_level": "moderate",
+  "total_portions_wasted": 0.25,
+  "total_drinks_wasted": 1,
+  "waste_level": "low",
   "tip": "Most of the plate was finished, with just small bits of mash and pastry left — try a slightly smaller serving next time."
 }
 
 Rules:
-- total_portions_wasted = sum of every item's portions_wasted, rounded to the nearest 0.25.
-- waste_level must be exactly one of: "minimal", "low", "moderate", "high", "severe" — judge holistically from total_portions_wasted (roughly: under 0.5 = minimal, ~0.5-1 = low, ~1-2 = moderate, ~2-3 = high, 3+ = severe).
+- total_portions_wasted = sum of portions_wasted for "portion" and "count" items ONLY (food), rounded to the nearest 0.25. Do NOT include "drink" items in this number — food and drinks are never added together.
+- total_drinks_wasted = sum of portions_wasted for "drink" items ONLY, rounded to the nearest 0.25. This is tracked and reported completely separately from total_portions_wasted.
+- waste_level must be exactly one of: "minimal", "low", "moderate", "high", "severe" — judge holistically from total_portions_wasted (food only, roughly: under 0.5 = minimal, ~0.5-1 = low, ~1-2 = moderate, ~2-3 = high, 3+ = severe). Drinks do not affect waste_level.
 - tip must be a single, specific, actionable sentence about portioning, consistent with each item's notes/percent_remaining, referencing an item's "display" wasted amount where it makes the tip more concrete. Keep it under 30 words.
-- SPECIAL CASE — nothing wasted: if every item is essentially fully consumed (percent_remaining 0 for every item, or 0 units left for countable items), set total_portions_wasted to 0 and make tip a short, genuine congratulatory sentence praising them for zero food waste — do NOT suggest smaller portions or give any portioning advice in this case, e.g. "Great job, you finished everything on your plate — zero food waste!"
-- If no food or drink is visible in the image at all, return {"items": [], "total_portions_wasted": 0, "waste_level": "minimal", "tip": "I couldn't spot any food or drink in this photo — try sending a clearer picture."}
+- SPECIAL CASE — nothing wasted: if every item (food AND drink) is essentially fully consumed (percent_remaining 0 for every item, or 0 units left for countable items), set total_portions_wasted and total_drinks_wasted to 0 and make tip a short, genuine congratulatory sentence praising them for zero food waste — do NOT suggest smaller portions or give any portioning advice in this case, e.g. "Great job, you finished everything on your plate — zero food waste!"
+- If no food or drink is visible in the image at all, return {"items": [], "total_portions_wasted": 0, "total_drinks_wasted": 0, "waste_level": "minimal", "tip": "I couldn't spot any food or drink in this photo — try sending a clearer picture."}
 
 Return ONLY the raw JSON object. No explanation, no markdown."""
 
@@ -155,10 +157,22 @@ def quantize_item_portions(parsed: dict) -> dict:
 
 def strip_sauces_and_recompute(parsed: dict) -> dict:
     items = [item for item in parsed.get("items", []) if not is_sauce_or_condiment(item.get("name", ""))]
-    total = round(sum(item.get("portions_wasted", 0) or 0 for item in items) * 4) / 4
+
+    food_total = round(sum(
+        item.get("portions_wasted", 0) or 0
+        for item in items
+        if (item.get("unit_type") or "portion").lower() != "drink"
+    ) * 4) / 4
+    drink_total = round(sum(
+        item.get("portions_wasted", 0) or 0
+        for item in items
+        if (item.get("unit_type") or "portion").lower() == "drink"
+    ) * 4) / 4
+
     parsed["items"] = items
-    parsed["total_portions_wasted"] = total
-    parsed["waste_level"] = compute_waste_level(total)
+    parsed["total_portions_wasted"] = food_total
+    parsed["total_drinks_wasted"] = drink_total
+    parsed["waste_level"] = compute_waste_level(food_total)
     return parsed
 
 
@@ -187,14 +201,15 @@ def merge_duplicate_items(items: list) -> list:
 def build_report_message(parsed: dict) -> str:
     items = merge_duplicate_items(parsed.get("items", []))
     total_portions = parsed.get("total_portions_wasted", 0)
+    total_drinks = parsed.get("total_drinks_wasted", 0)
     level = parsed.get("waste_level", "minimal")
     tip = parsed.get("tip", "")
 
-    if items and total_portions <= 0:
+    if items and all((item.get("portions_wasted", 0) or 0) <= 0 for item in items):
         lines = ["🎉 *Zero Food Waste!*", "━━━━━━━━━━━━━━━━━━━━━"]
         for item in items:
             lines.append(f"• {item.get('name', 'Item')} — fully finished ✅")
-        lines += ["━━━━━━━━━━━━━━━━━━━━━", "🌟 Total portions wasted: 0 — nothing wasted!"]
+        lines += ["━━━━━━━━━━━━━━━━━━━━━", "🌟 Total wasted: 0 — nothing wasted!"]
         congrats = tip or "Great job, you finished everything — zero food waste!"
         lines += ["", f"👏 {congrats}"]
         return "\n".join(lines)
@@ -215,10 +230,10 @@ def build_report_message(parsed: dict) -> str:
     else:
         lines.append("No food or drink items detected.")
 
-    lines += [
-        "━━━━━━━━━━━━━━━━━━━━━",
-        f"🍱 Total portions wasted: ~{_fmt_portions(total_portions)} ({emoji} {level.capitalize()})",
-    ]
+    lines += ["━━━━━━━━━━━━━━━━━━━━━", f"🍱 Total food wasted: ~{_fmt_portions(total_portions)} ({emoji} {level.capitalize()})"]
+
+    if total_drinks > 0:
+        lines.append(f"🥤 Total drinks wasted: ~{_fmt_portions(total_drinks)}")
 
     if tip:
         lines += ["", f"💡 Tip: {tip}"]
