@@ -56,29 +56,33 @@ How to break the photo into items — this matters a lot, read carefully:
 - NEVER include sauces, condiments, dips, or dressings as their own item — this is a hard rule, not a suggestion. Examples to always ignore entirely, even if some is left in a dish or on a plate: ketchup, chili sauce, soy sauce, mayo, gravy, salad dressing, any dipping sauce. Do not create an entry for them under any name, and do not add their leftover amount to any other item's total.
 - If the exact same item appears more than once (e.g. two identical drinks), combine into ONE entry and sum the wasted amount rather than listing duplicates.
 
-For each item, work through these steps IN ORDER:
-1. notes: in a few words, honestly describe exactly what is still visibly there — be concrete about quantity, e.g. "just scraps and sauce smears", "a few stray peas and a small chunk of pastry", "about a third of the rice still mounded up", "only a bite missing, rest untouched". Do NOT describe it vaguely — commit to a specific quantity impression first.
-2. percent_remaining: derive this STRICTLY from your own notes above, using this scale:
-   - notes = scraps / bones / crumbs / just sauce or gravy residue → 0-10%
-   - notes = a few small/stray bits here and there → 10-25%
-   - notes = roughly a third of it still there → 30-35%
-   - notes = about half still there → 45-55%
-   - notes = most of it still there, only a bite or two gone → 75-90%
-   - notes = completely untouched / full → 100%
-   IMPORTANT: judge total remaining VOLUME/AREA, not how many different food types still have a trace left. A plate where four different foods each have only a small bit remaining is still LOW percent_remaining overall (e.g. 15-25%) — do not inflate the number just because the plate "still has a bit of everything." Small residual amounts across many components should read as mostly-finished, not half-finished.
-   - Mixed plate: judge the WHOLE plate's remaining fraction directly using the scale above.
-   - Countable units: instead of a percentage, count the actual number of whole/partial units remaining.
-   - Drinks: if you can't see the liquid level (capped, opaque, angled away), assume it's untouched/full (100%). Only use a lower number if you can clearly see the liquid line.
-3. display: a short human-readable phrase for how much of THIS item is wasted — e.g. "2 apples", "1 apple", "0.5 portions", "1 portion", "1 cup". Use an exact count + the item's natural unit for countable items (apple, egg, dumpling, wing, nugget, cookie, prawn, etc.); use "portion(s)" for a mixed plate/dish; use "cup(s)" (or can/bottle/glass as appropriate) for drinks. Get singular vs plural right — "1 apple" not "1 apples".
-4. portions_wasted: a normalized number derived from percent_remaining (or the count, for countable items) — roughly how many typical single-person portions the wasted amount in "display" is equivalent to (e.g. 2 apples ≈ 2, since one piece of fruit ≈ one serving; a plate at 20% remaining ≈ 0.25; one cup of a drink ≈ 1; a shared platter at 85% remaining with typical_servings 4 ≈ 3.5). This is only used to compute an overall total — it isn't shown to the user directly, so it just needs to be consistent with percent_remaining/count.
-5. Sanity check before finalizing: re-read your own "tip" text (step below) against percent_remaining — they must agree. Never describe an item as "barely touched" or "nearly full" if percent_remaining is under 50%, and never describe it as "mostly finished" or "just a little left" if percent_remaining is over 50%.
+For each item, first decide its unit_type:
+- "portion": a mixed plate/dish/tray/basket/bowl judged as a whole — including an empty or near-empty plate/bowl/basket that shows only smears, crumbs, bones, or packaging with no real food substance left.
+- "count": individually countable identical whole units (apples, dumplings, wings, nuggets, cookies, eggs, prawns, etc.).
+- "drink": any cup, glass, bottle, can, or pitcher.
 
-Return a JSON object with this exact structure (include "notes" and "percent_remaining" per item — they document your reasoning and are never shown to the user, only "display" is shown):
+For each item, work through these steps IN ORDER:
+1. notes: in a few words, honestly describe exactly what is still visibly there — be concrete about quantity, e.g. "empty bowl, just a smear of sauce", "just scraps and sauce smears", "a few stray peas and a small chunk of pastry", "about a third of the rice still mounded up", "only a bite missing, rest untouched". Do NOT describe it vaguely — commit to a specific quantity impression first.
+2. percent_remaining: only applies to "portion" and "drink" items (skip for "count" items — see step 4). Derive this STRICTLY from your own notes above, using this scale:
+   - notes describe an EMPTY container, or only scraps / bones / crumbs / sauce or gravy residue / wrapper / packaging with no actual food substance → 0%
+   - notes = a few small/stray bits here and there → up to 30%
+   - notes = roughly a third to half still there → up to 65%
+   - notes = most of it still there, barely touched, or completely untouched/full → 100%
+   IMPORTANT: judge total remaining VOLUME/AREA, not how many different food types still have a trace left. A plate where four different foods each have only a small bit remaining is still LOW percent_remaining overall — do not inflate the number just because the plate "still has a bit of everything." An empty plate/bowl/basket with nothing but residue is 0%, never a small positive number.
+   - Drinks: if you can't see the liquid level (capped, opaque, angled away), assume it's untouched/full (100%). Only use a lower number if you can clearly see the liquid line.
+3. display: a short human-readable phrase for how much of THIS item is wasted — e.g. "2 apples", "1 apple", "0.5 portions", "1 portion", "1 cup", "fully finished". Use an exact count + the item's natural unit for countable items (apple, egg, dumpling, wing, nugget, cookie, prawn, etc.); use "portion(s)" for a mixed plate/dish; use "cup(s)" (or can/bottle/glass as appropriate) for drinks; use "fully finished" when portions_wasted is 0. Get singular vs plural right — "1 apple" not "1 apples".
+4. portions_wasted:
+   - For "portion" and "drink" items, this MUST be exactly one of these four values — no other number is ever allowed, not 0.05, not 0.1, not 0.3, not 0.75: 0, 0.25, 0.5, or 1. Map directly from percent_remaining: 0% → 0, up to 30% → 0.25, up to 65% → 0.5, up to 100% → 1.
+   - For "count" items, use the exact number of whole/partial units remaining (halves allowed for a partly-eaten unit, e.g. 2.5 apples). This can exceed 1.
+5. Sanity check before finalizing: re-read your own "tip" text (step below) against percent_remaining — they must agree. Never describe an item as "barely touched" or "nearly full" if percent_remaining is under 50%, and never describe it as "mostly finished" or "just a little left" if percent_remaining is over 50%. If notes describe an empty container, portions_wasted must be 0 — never round an empty container up to 0.25.
+
+Return a JSON object with this exact structure (include "notes", "unit_type", and "percent_remaining" per item — they document your reasoning and are never shown to the user, only "display" is shown):
 {
   "items": [
-    {"name": "Apples", "notes": "2 whole apples untouched", "percent_remaining": 100, "display": "2 apples", "portions_wasted": 2},
-    {"name": "Roast Dinner (chicken, mash, peas, cranberry)", "notes": "a few stray peas, a small chunk of pastry, a little mash, mostly sauce smears", "percent_remaining": 20, "display": "0.25 portions", "portions_wasted": 0.25},
-    {"name": "Iced Coffee", "notes": "capped, liquid level not visible", "percent_remaining": 100, "display": "1 cup", "portions_wasted": 1}
+    {"name": "Apples", "notes": "2 whole apples untouched", "unit_type": "count", "percent_remaining": 100, "display": "2 apples", "portions_wasted": 2},
+    {"name": "Roast Dinner (chicken, mash, peas, cranberry)", "notes": "a few stray peas, a small chunk of pastry, a little mash, mostly sauce smears", "unit_type": "portion", "percent_remaining": 20, "display": "0.25 portions", "portions_wasted": 0.25},
+    {"name": "Iced Coffee", "notes": "capped, liquid level not visible", "unit_type": "drink", "percent_remaining": 100, "display": "1 cup", "portions_wasted": 1},
+    {"name": "Claypot Bowl", "notes": "empty bowl, just sauce residue, no food left", "unit_type": "portion", "percent_remaining": 0, "display": "fully finished", "portions_wasted": 0}
   ],
   "total_portions_wasted": 3.25,
   "waste_level": "moderate",
@@ -96,6 +100,7 @@ Return ONLY the raw JSON object. No explanation, no markdown."""
 
 
 SAUCE_KEYWORDS = ("sauce", "ketchup", "mayo", "dip", "dressing", "gravy", "condiment")
+PORTION_LEVELS = (0, 0.25, 0.5, 1)
 
 
 def _fmt_portions(n: float) -> str:
@@ -118,6 +123,34 @@ def compute_waste_level(total: float) -> str:
     if total < 3:
         return "high"
     return "severe"
+
+
+def quantize_portion(value: float) -> float:
+    """Snap a percent-based item's portions_wasted to the nearest allowed bucket."""
+    return min(PORTION_LEVELS, key=lambda level: abs(level - (value or 0)))
+
+
+def quantize_item_portions(parsed: dict) -> dict:
+    """Backstop for the prompt's 0/0.25/0.5/1 rule, since the model doesn't always follow it.
+
+    Only "portion" and "drink" items are bucketed — "count" items (e.g. 2.5 apples) are
+    left as exact counts, since they aren't derived from a percent_remaining estimate.
+    The "display" text is regenerated from the bucketed value too, since the model's
+    original display string (e.g. "0.3 portions") would otherwise go stale.
+    """
+    for item in parsed.get("items", []):
+        unit_type = (item.get("unit_type") or "portion").lower()
+        if unit_type not in ("portion", "drink"):
+            continue
+        quantized = quantize_portion(item.get("portions_wasted", 0))
+        item["portions_wasted"] = quantized
+        if quantized <= 0:
+            item["display"] = "fully finished"
+        elif unit_type == "drink":
+            item["display"] = f"{_fmt_portions(quantized)} cup" if quantized == 1 else f"{_fmt_portions(quantized)} cups"
+        else:
+            item["display"] = f"{_fmt_portions(quantized)} portion" if quantized == 1 else f"{_fmt_portions(quantized)} portions"
+    return parsed
 
 
 def strip_sauces_and_recompute(parsed: dict) -> dict:
@@ -173,8 +206,12 @@ def build_report_message(parsed: dict) -> str:
     if items:
         for item in items:
             name = item.get("name", "Item")
-            display = item.get("display") or f"~{_fmt_portions(item.get('portions_wasted', 0))} portions"
-            lines.append(f"• {name} — {display} wasted")
+            portions = item.get("portions_wasted", 0)
+            if portions <= 0:
+                lines.append(f"• {name} — fully finished ✅")
+            else:
+                display = item.get("display") or f"~{_fmt_portions(portions)} portions"
+                lines.append(f"• {name} — {display} wasted")
     else:
         lines.append("No food or drink items detected.")
 
@@ -258,6 +295,7 @@ async def handle_food_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             raw_json = json_match.group(0)
 
         parsed = json.loads(raw_json)
+        parsed = quantize_item_portions(parsed)
         parsed = strip_sauces_and_recompute(parsed)
 
         await update.message.reply_text(
